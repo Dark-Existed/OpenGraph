@@ -1,69 +1,70 @@
-# OpenAttributeGraph Project Guide
+# OpenAttributeGraph Guide
 
-## Project Overview
-OpenAttributeGraph is a Swift package that provides attribute graph functionality, serving as a foundation for OpenSwiftUI project. It interfaces with DarwinPrivateFrameworks for compatibility testing.
+OpenAttributeGraph is the Swift package implementation of AttributeGraph-compatible primitives used by OpenSwiftUI. For Darwin compatibility, its Swift-facing implementation is mirrored into `DarwinPrivateFrameworks/AG`, where the private-framework package owns Swift interface generation and xcframework updates.
 
-## Development Workflow
+## Everyday Workflow
 
-### 1. Make Changes and Commit
-- Implement your feature or fix
-- Format changed Swift files: `Scripts/format-swift.sh`
-- Test locally
-- Commit changes with descriptive messages
+1. Make the code change.
+2. Format changed Swift files:
 
-### 2. (Optional) Compatibility Testing
-If changes affect the interface with DarwinPrivateFrameworks:
-```bash
-# Generate AG template
-Scripts/gen_ag_template.sh
-`
-# Update code in ../DarwinPrivateFramework from .ag_template
+   ```sh
+   Scripts/format-swift.sh
+   ```
 
-# Set useLocalDeps to true in Package.swift
-xed -l -c 's/let useLocalDeps = envEnable("OPENATTRIBUTEGRAPH_USE_LOCAL_DEPS")/let useLocalDeps = true/' Package.swift
+3. Build and test locally:
 
-# Build and test with both compatibility modes:
-OPENATTRIBUTEGRAPH_COMPATIBILITY_TEST=0 swift build
-OPENATTRIBUTEGRAPH_COMPATIBILITY_TEST=1 swift build
+   ```sh
+   swift build
+   swift test
+   ```
+
+4. Commit with a descriptive message.
+
+## DarwinPrivateFrameworks Sync
+
+Run this when changes affect the AttributeGraph Swift API, shim behavior, or Swift files that must be reflected in `DarwinPrivateFrameworks`.
+
+`DarwinPrivateFrameworks` should exist next to this checkout at `../DarwinPrivateFrameworks`. See `../DarwinPrivateFrameworks/CLAUDE.md` and `../DarwinPrivateFrameworks/AG/README.md` for the framework-side build and update details.
+
+Sync only the Swift implementation files:
+
+- Source: `Sources/OpenAttributeGraph/**/*.swift`
+- Destination: `../DarwinPrivateFrameworks/AG/DeviceSwiftShims/**/*.swift`
+
+Preserve the relative file layout when syncing. Do not use `.ag_template` as the handoff artifact; `Scripts/gen_ag_template.sh` is legacy for this workflow. Swift interface generation is handled inside DarwinPrivateFrameworks by its AG update scripts.
+
+After syncing the Swift files, update DarwinPrivateFrameworks from that repo:
+
+```sh
+cd ../DarwinPrivateFrameworks
+swift package update-xcframeworks --allow-writing-to-package-directory
 ```
 
-### 3. Create DarwinPrivateFramework PR
-After testing, discard local changes from step 2:
-```bash
-# Discard any local testing changes
-git checkout -- Package.swift
+Then verify this package against the local DarwinPrivateFrameworks checkout:
 
-# Create PR for DarwinPrivateFramework
-Scripts/bump_ag_pr.sh <branch-name>
+```sh
+cd ../OpenAttributeGraph
+OPENATTRIBUTEGRAPH_USE_LOCAL_DEPS=1 OPENATTRIBUTEGRAPH_COMPATIBILITY_TEST=1 swift build
 ```
 
-### 4. Update Dependencies
-After the DarwinPrivateFramework PR is merged:
-```bash
-# Update package dependencies
-swift package update DarwinPrivateFramework
+Create and merge the DarwinPrivateFrameworks PR before updating this package's resolved dependency:
 
-# Commit the updated Package.resolved
+```sh
+swift package update DarwinPrivateFrameworks
 git add Package.resolved
 git commit -m "Update DarwinPrivateFrameworks dependency"
 ```
 
-### 5. Create Project PR
-```bash
-# Create PR for the current branch
-gh pr create --base main --head <current-branch>
-```
+## Key Commands
 
-## Key Scripts
-- `Scripts/format-swift.sh` - Formats changed Swift files (run before committing)
-- `Scripts/gen_ag_template.sh` - Generates AG template for compatibility testing
-- `Scripts/bump_ag_pr.sh` - Creates PR for DarwinPrivateFramework updates
+- `Scripts/format-swift.sh` - Format changed Swift files.
+- `swift build` - Build the normal OpenAttributeGraph implementation.
+- `swift test` - Run the normal local test suite.
+- `OPENATTRIBUTEGRAPH_USE_LOCAL_DEPS=1 OPENATTRIBUTEGRAPH_COMPATIBILITY_TEST=1 swift build` - Build against sibling `../DarwinPrivateFrameworks`.
+- `swift package update DarwinPrivateFrameworks` - Refresh the resolved DarwinPrivateFrameworks dependency after its PR lands.
 
-## Environment Variables
-- `OPENATTRIBUTEGRAPH_COMPATIBILITY_TEST=0` - Test without compatibility mode
-- `OPENATTRIBUTEGRAPH_COMPATIBILITY_TEST=1` - Test with compatibility mode
+## Notes
 
-## Important Notes
-- Always test compatibility when changing interfaces
-- Ensure DarwinPrivateFramework PR is merged before creating main project PR
-- Keep Package.resolved updated after dependency changes
+- Keep OpenAttributeGraph implementation changes and DarwinPrivateFrameworks sync changes in separate PRs when both repos need updates.
+- Do not manually edit generated Swift interface files in this repo; DarwinPrivateFrameworks owns that generation.
+- Prefer environment variables over temporary `Package.swift` edits for local dependency testing.
